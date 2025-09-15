@@ -47,39 +47,6 @@
             }, 5000);
         }
 
-        // Cargar datos de un contrato existente y escuchar en tiempo real
-        function setupRealtimeListener() {
-            const contractsRef = collection(db, `/artifacts/${appId}/public/data/contracts`);
-            onSnapshot(contractsRef, (snapshot) => {
-                snapshot.docChanges().forEach((change) => {
-                    if (change.type === "added" || change.type === "modified") {
-                        const contractData = change.doc.data();
-                        const currentContractNumber = contractNumberInput.value.trim();
-                        // Actualiza el formulario si el contrato actual coincide con el modificado
-                        if (contractData.contractNumber === currentContractNumber) {
-                            document.getElementById('contract-object').value = contractData.contractObject || '';
-                            document.getElementById('start-date').value = contractData.startDate || '';
-                            document.getElementById('end-date').value = contractData.endDate || '';
-                            document.getElementById('contract-value').value = contractData.contractValue || '';
-                            document.getElementById('counterpart-value').value = contractData.counterpartValue || '';
-                            document.getElementById('total-value').value = contractData.totalValue || '';
-                            document.getElementById('supervisor').value = contractData.supervisor || '';
-                            document.getElementById('subregion').value = contractData.subregion || '';
-                            document.getElementById('office').value = contractData.office || '';
-                            document.getElementById('prorrogas').value = contractData.prorrogas || '0';
-                            document.getElementById('technical-progress').value = contractData.technicalProgress || '';
-                            document.getElementById('financial-progress').value = contractData.financialProgress || '';
-                            document.getElementById('additional-notes').value = contractData.additionalNotes || '';
-                            document.getElementById('siniestrado').checked = contractData.siniestrado || false;
-                            submitButton.textContent = 'Actualizar Contrato';
-                            submitButton.className = 'w-full py-3 px-4 bg-yellow-500 text-white font-bold rounded-lg shadow-lg hover:bg-yellow-600 transition-all duration-300';
-                            showMessage(`Contrato #${currentContractNumber} actualizado en tiempo real.`, 'bg-blue-500');
-                        }
-                    }
-                });
-            });
-        }
-        
         // Cargar datos de un contrato existente al buscar
         async function loadContractData(contractNumber) {
             const docRef = doc(db, `/artifacts/${appId}/public/data/contracts`, contractNumber);
@@ -263,8 +230,11 @@
                     exportCsvButton.classList.add('hidden');
                 }
                 
-                // Iniciar el listener en tiempo real después de la autenticación
-                setupRealtimeListener();
+                // Precargar datos si ya hay un número de contrato en el campo
+                if (contractNumberInput.value.trim()) {
+                    loadContractData(contractNumberInput.value.trim());
+                }
+
             } else {
                 // Iniciar sesión anónima si no hay usuario
                 signInAnonymously(auth);
