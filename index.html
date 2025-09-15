@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seguimiento de Contratos ART</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, collection, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Establecer nivel de log para depuración
+        setLogLevel('debug');
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : undefined;
+
+        // Inicializar Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        let userId = '';
+        let appCreatorId = null;
+
+        const contractForm = document.getElementById('contract-form');
+        const contractNumberInput = document.getElementById('contract-number');
+        const statusMessage = document.getElementById('status-message');
+        const submitButton = document.getElementById('submit-button');
+        const exportCsvButton = document.getElementById('export-csv-button');
+        const userIdDisplay = document.getElementById('user-id');
+
+        // Función para mostrar mensajes de estado
+        function showMessage(message, colorClass = 'bg-green-500') {
+            statusMessage.textContent = message;
+            statusMessage.className = `p-3 rounded-md text-white ${colorClass} transition-all duration-300 transform scale-100 opacity-100 mt-4`;
+            statusMessage.style.display = 'block';
+            setTimeout(() => {
+                statusMessage.style.transform = 'scale(0.95)';
+                statusMessage.style.opacity = '0';
+                setTimeout(() => {
+                    statusMessage.style.display = 'none';
+                }, 300);
+            }, 5000);
+        }
+
+        // Cargar datos de un contrato existente y escuchar en tiempo real
+        function setupRealtimeListener() {
+            const contractsRef = collection(db, `/artifacts/${appId}/public/data/contracts`);
+            onSnapshot(contractsRef, (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    if (change.type === "added" || change.type === "modified") {
+                        const contractData = change.doc.data();
+                        const currentContractNumber = contractNumberInput.value.trim();
+                        // Actualiza el formulario si el contrato actual coincide con el modificado
+                        if (contractData.contractNumber === currentContractNumber) {
+                            document.getElementById('contract-object').value = contractData.contractObject || '';
+                            document.getElementById('start-date').value = contractData.startDate || '';
+                            document.getElementById('end-date').value = contractData.endDate || '';
+                            document.getElementById('contract-value').value = contractData.contractValue || '';
+                            document.getElementById('counterpart-value').value = contractData.counterpartValue || '';
+                            document.getElementById('total-value').value = contractData.totalValue || '';
+                            document.getElementById('supervisor').value = contractData.supervisor || '';
+                            document.getElementById('subregion').value = contractData.subregion || '';
+                            document.getElementById('office').value = contractData.office || '';
+                            document.getElementById('prorrogas').value = contractData.prorrogas || '0';
+                            document.getElementById('technical-progress').value = contractData.technicalProgress || '';
+                            document.getElementById('financial-progress').value = contractData.financialProgress || '';
+                            document.getElementById('additional-notes').value = contractData.additionalNotes || '';
+                            document.getElementById('siniestrado').checked = contractData.siniestrado || false;
+                            submitButton.textContent = 'Actualizar Contrato';
+                            submitButton.className = 'w-full py-3 px-4 bg-yellow-500 text-white font-bold rounded-lg shadow-lg hover:bg-yellow-600 transition-all duration-300';
+                            showMessage(`Contrato #${currentContractNumber} actualizado en tiempo real.`, 'bg-blue-500');
+                        }
+                    }
+                });
+            });
+        }
+        
+        // Cargar datos de un contrato existente al buscar
+        async function loadContractData(contractNumber) {
+            const docRef = doc(db, `/artifacts/${appId}/public/data/contracts`, contractNumber);
+            try {
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    document.getElementById('contract-object').value = data.contractObject || '';
+                    document.getElementById('start-date').value = data.startDate || '';
+                    document.getElementById('end-date').value = data.endDate || '';
+                    document.getElementById('contract-value').value = data.contractValue || '';
+                    document.getElementById('counterpart-value').value = data.counterpartValue || '';
+                    document.getElementById('total-value').value = data.totalValue || '';
+                    document.getElementById('supervisor').value = data.supervisor || '';
+                    document.getElementById('subregion').value = data.subregion || '';
+                    document.getElementById('office').value = data.office || '';
+                    document.getElementById('prorrogas').value = data.prorrogas || '0';
+                    document.getElementById('technical-progress').value = data.technicalProgress || '';
+                    document.getElementById('financial-progress').value = data.financialProgress || '';
+                    document.getElementById('additional-notes').value = data.additionalNotes || '';
+                    document.getElementById('siniestrado').checked = data.siniestrado || false;
+                    
+                    submitButton.textContent = 'Actualizar Contrato';
+                    submitButton.className = 'w-full py-3 px-4 bg-yellow-500 text-white font-bold rounded-lg shadow-lg hover:bg-yellow-600 transition-all duration-300';
+                    showMessage(`Contrato #${contractNumber} encontrado. La información ha sido cargada.`, 'bg-blue-500');
+
+                } else {
+                    contractForm.reset();
+                    contractNumberInput.value = contractNumber;
+                    submitButton.textContent = 'Guardar Información';
+                    submitButton.className = 'w-full py-3 px-4 bg-green-500 text-white font-bold rounded-lg shadow-lg hover:bg-green-600 transition-all duration-300';
+                    showMessage(`Contrato #${contractNumber} no encontrado. Ingresa la información del nuevo contrato.`, 'bg-blue-500');
+                }
+            } catch (error) {
+                console.error("Error al cargar el documento:", error);
+                showMessage("Error al cargar la información. Intenta de nuevo.", 'bg-red-500');
+            }
+        }
+
+        // Guardar o actualizar datos
+        contractForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const contractNumber = contractNumberInput.value.trim();
+            if (!contractNumber) {
+                showMessage("Por favor, ingresa el número de contrato.", 'bg-red-500');
+                return;
+            }
+
+            const data = {
+                contractNumber: contractNumber,
+                contractObject: document.getElementById('contract-object').value,
+                startDate: document.getElementById('start-date').value,
+                endDate: document.getElementById('end-date').value,
+                contractValue: parseFloat(document.getElementById('contract-value').value) || 0,
+                counterpartValue: parseFloat(document.getElementById('counterpart-value').value) || 0,
+                totalValue: parseFloat(document.getElementById('total-value').value) || 0,
+                supervisor: document.getElementById('supervisor').value,
+                office: document.getElementById('office').value,
+                subregion: document.getElementById('subregion').value,
+                prorrogas: parseInt(document.getElementById('prorrogas').value) || 0,
+                siniestrado: document.getElementById('siniestrado').checked,
+                technicalProgress: document.getElementById('technical-progress').value,
+                financialProgress: document.getElementById('financial-progress').value,
+                additionalNotes: document.getElementById('additional-notes').value,
+                lastUpdated: new Date().toISOString()
+            };
+
+            const docRef = doc(db, `/artifacts/${appId}/public/data/contracts`, contractNumber);
+
+            try {
+                await setDoc(docRef, data);
+                showMessage(`Información del contrato #${contractNumber} guardada exitosamente.`, 'bg-green-500');
+                contractForm.reset();
+                submitButton.textContent = 'Guardar Información';
+                submitButton.className = 'w-full py-3 px-4 bg-green-500 text-white font-bold rounded-lg shadow-lg hover:bg-green-600 transition-all duration-300';
+            } catch (error) {
+                console.error("Error al guardar el documento:", error);
+                showMessage("Error al guardar la información. Intenta de nuevo.", 'bg-red-500');
+            }
+        });
+
+        // Evento para buscar el contrato al escribir
+        let typingTimer;
+        const doneTypingInterval = 800; // 0.8 segundos
+        contractNumberInput.addEventListener('keyup', () => {
+            clearTimeout(typingTimer);
+            if (contractNumberInput.value) {
+                typingTimer = setTimeout(() => {
+                    loadContractData(contractNumberInput.value.trim());
+                }, doneTypingInterval);
+            }
+        });
+
+        // Exportar a CSV
+        exportCsvButton.addEventListener('click', async () => {
+            // Verifica si el usuario actual es el creador de la aplicación antes de exportar
+            if (!auth.currentUser || auth.currentUser.uid !== appCreatorId) {
+                showMessage("No tienes permiso para exportar los datos. Solo el creador de la aplicación puede hacerlo.", 'bg-red-500');
+                return;
+            }
+
+            try {
+                const contractsRef = collection(db, `/artifacts/${appId}/public/data/contracts`);
+                const querySnapshot = await getDocs(contractsRef);
+
+                if (querySnapshot.empty) {
+                    showMessage("No hay contratos para exportar.", 'bg-red-500');
+                    return;
+                }
+
+                // Headers del CSV
+                const headers = [
+                    "Numero de Contrato", "Objeto del Contrato", "Fecha de Inicio", "Fecha de Finalizacion", 
+                    "Valor del Contrato ($)", "Valor Contrapartida ($)", "Valor Total ($)", "Supervisor", 
+                    "Direccion / Subdireccion / Area", "Subregion", "Numero de Prorrogas", "Siniestrado", 
+                    "Avance Tecnico (%)", "Avance Financiero (%)", "Observaciones Adicionales", "Ultima Actualizacion"
+                ];
+
+                const rows = [];
+                rows.push(headers.join(';')); // Usa ';' para compatibilidad en Excel
+
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const row = [
+                        data.contractNumber || '',
+                        `"${data.contractObject.replace(/"/g, '""')}"` || '', // Escapa comillas
+                        data.startDate || '',
+                        data.endDate || '',
+                        data.contractValue || '',
+                        data.counterpartValue || '',
+                        data.totalValue || '',
+                        data.supervisor || '',
+                        data.office || '',
+                        data.subregion || '',
+                        data.prorrogas || '',
+                        data.siniestrado ? 'Sí' : 'No',
+                        data.technicalProgress || '',
+                        data.financialProgress || '',
+                        `"${data.additionalNotes.replace(/"/g, '""')}"` || '', // Escapa comillas
+                        data.lastUpdated || ''
+                    ];
+                    rows.push(row.join(';'));
+                });
+
+                const csvString = rows.join('\n');
+                const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = 'seguimiento_contratos.csv';
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                showMessage("Datos exportados exitosamente a 'seguimiento_contratos.csv'.", 'bg-green-500');
+
+            } catch (error) {
+                console.error("Error al exportar los datos:", error);
+                showMessage("Hubo un error al exportar. Por favor, revisa la consola para más detalles.", 'bg-red-500');
+            }
+        });
+
+        // Este listener se ejecuta cuando el estado de autenticación cambia.
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                userId = user.uid;
+                console.log("Autenticación exitosa. User ID:", userId);
+
+                // Si el token inicial existe, el usuario actual es el creador.
+                if (initialAuthToken) {
+                    const creatorIdFromToken = JSON.parse(atob(initialAuthToken.split('.')[1])).uid;
+                    if (creatorIdFromToken) {
+                        appCreatorId = creatorIdFromToken;
+                    }
+                }
+                
+                // Si el usuario actual es el creador de la aplicación, muestra el botón de exportar.
+                if (appCreatorId && userId === appCreatorId) {
+                    exportCsvButton.classList.remove('hidden');
+                } else {
+                    exportCsvButton.classList.add('hidden');
+                }
+                
+                // Iniciar el listener en tiempo real después de la autenticación
+                setupRealtimeListener();
+            } else {
+                // Iniciar sesión anónima si no hay usuario
+                signInAnonymously(auth);
+            }
+        });
+    </script>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4 font-sans">
+    <div class="bg-white p-8 rounded-xl shadow-2xl max-w-4xl w-full border border-gray-200">
+        <!-- Encabezado con Logos -->
+        <div class="flex justify-center items-center gap-6 mb-8">
+            <img src="https://www.art.gov.co/SiteAssets/Images/logo-ART-blanco-horiz.png" alt="Logo de la Agencia de Renovación del Territorio" class="h-16 w-auto object-contain rounded-md">
+            <h1 class="text-3xl font-extrabold text-gray-800 text-center">Seguimiento de Contratos</h1>
+            <img src="https://www.fondocolombiaenpaz.gov.co/Content/Imagenes/Logos/logo-FCP.png" alt="Logo del Fondo Colombia en Paz" class="h-16 w-auto object-contain rounded-md">
+        </div>
+
+        <p id="status-message" class="hidden text-center"></p>
+
+        <!-- Formulario de Contratos -->
+        <form id="contract-form" class="space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Número de Contrato -->
+                <div class="col-span-1">
+                    <label for="contract-number" class="block text-sm font-semibold text-gray-700 mb-1">Número de Contrato</label>
+                    <input type="text" id="contract-number" name="contract-number" required class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300">
+                </div>
+                <!-- Objeto del Contrato -->
+                <div class="col-span-1">
+                    <label for="contract-object" class="block text-sm font-semibold text-gray-700 mb-1">Objeto del Contrato</label>
+                    <textarea id="contract-object" name="contract-object" rows="3" class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300"></textarea>
+                </div>
+            </div>
+
+            <!-- Vigencia y Valores -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                    <label for="start-date" class="block text-sm font-semibold text-gray-700 mb-1">Fecha de Inicio</label>
+                    <input type="date" id="start-date" name="start-date" class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300">
+                </div>
+                <div>
+                    <label for="end-date" class="block text-sm font-semibold text-gray-700 mb-1">Fecha de Finalización</label>
+                    <input type="date" id="end-date" name="end-date" class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300">
+                </div>
+                <div>
+                    <label for="contract-value" class="block text-sm font-semibold text-gray-700 mb-1">Valor del Contrato ($)</label>
+                    <input type="number" id="contract-value" name="contract-value" step="any" class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300">
+                </div>
+                <div>
+                    <label for="counterpart-value" class="block text-sm font-semibold text-gray-700 mb-1">Valor Contrapartida ($)</label>
+                    <input type="number" id="counterpart-value" name="counterpart-value" step="any" class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300">
+                </div>
+                <div>
+                    <label for="total-value" class="block text-sm font-semibold text-gray-700 mb-1">Valor Total ($)</label>
+                    <input type="number" id="total-value" name="total-value" step="any" class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300">
+                </div>
+                <div>
+                    <label for="prorrogas" class="block text-sm font-semibold text-gray-700 mb-1">Número de Prórrogas</label>
+                    <input type="number" id="prorrogas" name="prorrogas" min="0" class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300">
+                </div>
+            </div>
+
+            <!-- Información del Supervisor y Ubicación -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                    <label for="supervisor" class="block text-sm font-semibold text-gray-700 mb-1">Supervisor</label>
+                    <input type="text" id="supervisor" name="supervisor" class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300">
+                </div>
+                <div>
+                    <label for="office" class="block text-sm font-semibold text-gray-700 mb-1">Dirección / Subdirección / Área</label>
+                    <input type="text" id="office" name="office" class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300">
+                </div>
+                <div>
+                    <label for="subregion" class="block text-sm font-semibold text-gray-700 mb-1">Subregión</label>
+                    <input type="text" id="subregion" name="subregion" class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300">
+                </div>
+            </div>
+
+            <!-- Avances y Observaciones -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label for="technical-progress" class="block text-sm font-semibold text-gray-700 mb-1">Avance Técnico (%)</label>
+                    <input type="number" id="technical-progress" name="technical-progress" min="0" max="100" class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300">
+                </div>
+                <div>
+                    <label for="financial-progress" class="block text-sm font-semibold text-gray-700 mb-1">Avance Financiero (%)</label>
+                    <input type="number" id="financial-progress" name="financial-progress" min="0" max="100" class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300">
+                </div>
+                <div class="col-span-full">
+                    <label for="additional-notes" class="block text-sm font-semibold text-gray-700 mb-1">Observaciones Adicionales</label>
+                    <textarea id="additional-notes" name="additional-notes" rows="4" class="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300"></textarea>
+                </div>
+            </div>
+            
+            <!-- Checkbox Siniestrado -->
+            <div class="flex items-center">
+                <input type="checkbox" id="siniestrado" name="siniestrado" class="h-5 w-5 text-red-600 border-gray-300 rounded focus:ring-red-500">
+                <label for="siniestrado" class="ml-2 block text-sm font-medium text-gray-700">El contrato está siniestrado</label>
+            </div>
+
+            <!-- Botones de Acción -->
+            <div class="flex flex-col md:flex-row gap-4 mt-8">
+                <button id="submit-button" type="submit" class="w-full py-3 px-4 bg-green-500 text-white font-bold rounded-lg shadow-lg hover:bg-green-600 transition-all duration-300">
+                    Guardar Información
+                </button>
+                <button id="export-csv-button" type="button" class="w-full py-3 px-4 bg-blue-600 text-white font-bold rounded-lg shadow-lg hover:bg-blue-700 transition-all duration-300 hidden">
+                    Exportar a CSV
+                </button>
+            </div>
+        </form>
+    </div>
+</body>
+</html>
